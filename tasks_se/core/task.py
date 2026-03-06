@@ -1,5 +1,6 @@
 import time
 from apscheduler.schedulers.blocking import BlockingScheduler
+import undetected_chromedriver as uc
 from selenium import webdriver
 from selenium.webdriver.edge.options import Options
 from selenium.webdriver.edge.service import Service

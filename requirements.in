@@ -2,6 +2,7 @@
 requests~=2.32.3
 apscheduler~=3.11.0
 selenium~=4.36.0
+undetected_chromedriver==3.5.5
 
 # 数据处理
 numpy~=1.26.4
@@ -9,5 +10,4 @@ pandas~=2.2.3
 
 # 工具类
 python-dotenv~=1.1.1
-wcwidth~=0.2.13  # 如果确实需要终端宽度处理
 setuptools>=79.0.0

@@ -12,6 +12,6 @@
 ## 安装
 
 ```bash
-pip install -e /path/to/tasks_se
+pip install git+https://github.com/Ccharliel/task-se.git@main
 ```
 - '-e' 代表可编辑，即修改包源码当前项目可直接生效
