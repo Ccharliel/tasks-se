@@ -148,8 +148,8 @@ if __name__ == '__main__':
     url = "https://beta33.pospal.cn/Report/BusinessSummaryV2"
     name = "demo"
     load_dotenv()
-    un = os.getenv("POSPAY_USERNAME")
-    p = os.getenv("POSPAY_PASSWORD")
+    un = os.getenv("POSPAL_USERNAME")
+    p = os.getenv("POSPAL_PASSWORD")
     s = AUTOGETSALE(0, 0, 2560, 1440, url, un, p, "demo")
     s.set_period("2025-6-1~2025-6-3")
     s.run()
