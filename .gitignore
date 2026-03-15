@@ -208,5 +208,4 @@ __marimo__/
 
 # custom
 **/info/
-**/log/
-requirements.txt
+**/logs/

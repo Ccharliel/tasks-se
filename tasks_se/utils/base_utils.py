@@ -1,6 +1,12 @@
 from pathlib import Path
 import os
 import socket
+import requests
+import zipfile
+import shutil
+import platform
+import sys
+from loguru import logger
 
 def auto_del_files(folder_path, max_nums):
     """
@@ -14,14 +20,14 @@ def auto_del_files(folder_path, max_nums):
 
 def is_port_available(port):
     """检查端口是否可用"""
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s: # 相当于说：创建一个使用IPv4地址的TCP连接
         try:
             s.bind(('127.0.0.1', port))
             return True
         except socket.error:
             return False
 
-def find_free_port(start_port=9222, max_attempts=100):
+def find_free_port(start_port, max_attempts):
     """查找空闲端口"""
     for port in range(start_port, start_port + max_attempts):
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
@@ -33,3 +39,74 @@ def find_free_port(start_port=9222, max_attempts=100):
     raise Exception("找不到可用端口")
 
 
+def get_platform_chromedriver():
+    "获取当前平台信息, 返回符合 ChromeDriver 命名规范的字符串"
+    system = platform.system().lower()
+    machine = platform.machine().lower()
+    # 处理操作系统
+    if system == "windows":
+        # 检查是32位还是64位
+        if sys.maxsize > 2 ** 32:
+            return "win64"
+        else:
+            return "win32"
+    elif system == "linux":
+        return "linux64"
+    elif system == "darwin":  # macOS
+        # 检查ARM架构（Apple Silicon）
+        if machine in ["arm64", "aarch64"]:
+            return "mac-arm64"
+        else:
+            return "mac-x64"
+    else:
+        raise Exception(f"Unsupported platform: {system}")
+
+
+CURRENT_FILE = Path(__file__).resolve()
+CURRENT_DIR = CURRENT_FILE.parent
+log_dir = f"{CURRENT_DIR.parent}/logs"
+os.makedirs(log_dir, exist_ok=True)
+logger.add(f"{log_dir}/driver.log",
+           rotation="1 MB",
+           filter=lambda record: record["function"] == "chromedriver_downloading")
+def chromedriver_downloading(version, save_dir):
+    """通过国内镜像下载指定版本浏览器驱动，返回驱动路径"""
+    version_tag = version.replace(".", "_")
+    platform_tag = get_platform_chromedriver()
+    os.makedirs(save_dir, exist_ok=True)
+    save_path = os.path.join(save_dir, f"chromedriver-{version_tag}-{platform_tag}.exe")
+    save_path = os.path.abspath(save_path)
+    if os.path.exists(save_path):
+        logger.info(f"ChromeDriver existed: {save_path}")
+        return save_path
+    try:
+        logger.info(f"Downloading ChromeDriver {version} for {platform_tag} ...")
+        url_huawei = f"https://repo.huaweicloud.com/chromedriver/{version}/chromedriver-{platform_tag}.zip"
+        # 下载 zip
+        response = requests.get(url_huawei)
+        if response.status_code != 200:
+            raise Exception(f"mirro erro: {response.status_code}")
+        # 保存 zip
+        zip_path = save_path + ".zip"
+        with open(zip_path, 'wb') as f:
+            f.write(response.content)
+        # 解压
+        tmp_dir = os.path.join(save_dir, "temp_driver")
+        with zipfile.ZipFile(zip_path, 'r') as zip_ref:
+            zip_ref.extractall(tmp_dir)
+        # 移动exe文件
+        for root, dirs, files in os.walk(tmp_dir):
+            if "chromedriver.exe" in files:
+                src = os.path.join(root, "chromedriver.exe")
+                shutil.move(src, save_path)
+                break
+        logger.success(f"Successfully download ChromeDriver: {save_path}")
+        return save_path
+    except Exception as e:
+        raise RuntimeError(f"Failed do download ChromeDriver: {e}")
+    finally:
+        # 清理临时文件
+        if zip_path and os.path.exists(zip_path):
+            os.remove(zip_path)
+        if tmp_dir and os.path.exists(tmp_dir):
+            shutil.rmtree(tmp_dir)

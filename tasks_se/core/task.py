@@ -1,103 +1,166 @@
 import time
+import tempfile
 from apscheduler.schedulers.blocking import BlockingScheduler
 import undetected_chromedriver as uc
 from selenium import webdriver
 from selenium.webdriver.edge.options import Options
-from selenium.webdriver.edge.service import Service
+from selenium.webdriver.support.select import Select
 import threading
 from abc import ABC, abstractmethod
 import shutil
+from dotenv import load_dotenv
+from pathlib import Path
+from loguru import logger
 
 from tasks_se.utils.base_utils import *
 
 
-# TASK 是进行selenium进行自动化操作的任务
-# 子类最好重新给name和type
-class TASK(ABC):
-    TaskNums = 0
-    _lock = threading.Lock()
+CURRENT_FILE = Path(__file__).resolve()
+CURRENT_DIR = CURRENT_FILE.parent
+log_dir = f"{CURRENT_DIR.parent}/logs"
+os.makedirs(log_dir, exist_ok=True)
+logger.add(f"{log_dir}/driver.log",
+           rotation="1 MB",
+           filter=lambda record: record["function"] == "_init_driver")
 
-    def __init__(self, x_p, y_p, x_s, y_s, u, name=None):
+# TASK 是进行selenium进行自动化操作的任务
+class TASK(ABC):
+    NUM = 0
+    _num_lock = threading.Lock()
+
+    def __init__(self, u, x_p, y_p, x_s, y_s, name=None):
+        self.u = u
         self.x_p = x_p
         self.y_p = y_p
         self.x_s = x_s
         self.y_s = y_s
-        self.u = u
-        if name is None:
-            self.name = f"TASK{TASK.TaskNums}"
-        else:
-            self.name = name
-        self.type = "tasks_se"
-        self.dr = None  # dr 在每个子类的 type 和 name 重写后再初始化
-        with TASK._lock:
-            TASK.TaskNums += 1
+        self.class_name = self.__class__.__name__
+        self.log_dir = f"logs/{self.class_name}"
+        os.makedirs(self.log_dir, exist_ok=True)
+        self.name = f"{self.class_name}{TASK.NUM}" if name is None else name
+        self.dr = None  # 子类 name 重写后再初始化驱动
+        with TASK._num_lock:
+            TASK.NUM += 1
 
     def _init_driver(self, shared_dr=None):
         """初始化驱动"""
         ### 共享已有驱动情况
-        if shared_dr:
-            driver = shared_dr
-            current_url = driver.current_url
-            driver.execute_script("window.open('');")
-            driver.switch_to.window(driver.window_handles[-1])
-            driver.get(current_url)
-            return driver
-        ### 创建新驱动情况
-        else:
-            ## 按优先级尝试不同的驱动路径
-            service = None
-            driver_dir = "D:/msedgedriver_tmp"
-            driver_web = "https://developer.microsoft.com/en-us/microsoft-edge/tools/webdriver"
-            driver_paths = [
-                None,  # 系统PATH
-                f"{driver_dir}/msedgedriver.exe"  # 自定义路径
-            ]
-            for driver_path in driver_paths:
-                try:
-                    os.makedirs(driver_dir, exist_ok=True)
-                    if driver_path:
-                        service = Service(executable_path=driver_path)
-                    else:
-                        service = Service()  # 使用系统PATH
-                    # 测试驱动
-                    dr_tmp = webdriver.Edge(service=service)
-                    dr_tmp.close()
-                    print(f"驱动加载成功: {driver_path or '系统PATH'}")
-                    break  # 成功则跳出循环
-                except Exception as e:
-                    print(f"驱动路径 {driver_path or '系统PATH'} 失败: {e}\n"
-                          f"请到{driver_web}\n"
-                          f"下载最新驱动(msedgedriver.exe)，然后放到 {driver_dir} 下")
-                    if driver_path == driver_paths[-1]:  # 最后一个尝试也失败
-                        raise RuntimeError(f"所有驱动路径都失败，最后一个错误: {e}")
-            ## 确定驱动参数
-            opt = Options()
-            # opt.add_experimental_option('detach', True)
-            opt.page_load_strategy = "eager"
-            # 将用户数据保存在 D:/edge_user_data 目录
-            user_data_dir = f"D:/edge_user_data/{self.type}/{self.name}"
-            if os.path.exists(user_data_dir):
-                shutil.rmtree(user_data_dir)
-            os.makedirs(user_data_dir, exist_ok=True)
-            opt.add_argument(f"--user-data-dir={user_data_dir}")
-            opt.add_argument("--profile-directory=Default")  # 使用默认配置文件
-            # 确保每个任务都使用不同的可用端口
-            debug_port = 9222 + TASK.TaskNums
-            if is_port_available(debug_port):
-                opt.add_argument(f"--remote-debugging-port={debug_port}")
+        try:
+            logger.info(f'{self.name} is initializing driver ...')
+            if shared_dr:
+                logger.info(f'{self.name} is using shared driver ...')
+                driver = shared_dr
+                current_url = driver.current_url
+                driver.execute_script("window.open('');")
+                driver.switch_to.window(driver.window_handles[-1])
+                driver.get(current_url)
+            ### 创建新驱动情况
             else:
-                # 端口被占用，使用随机端口
-                safe_port = find_free_port(9222, 10000)
-                opt.add_argument(f"--remote-debugging-port={safe_port}")
-            ## 创建驱动实例并调整
-            driver = webdriver.Edge(service=service, options=opt)
-            driver.get(self.u)
-            time.sleep(0.1)
-            driver.implicitly_wait(3)
-            driver.set_window_position(self.x_p, self.y_p)
-            driver.set_window_size(self.x_s, self.y_s)
-        return driver
+                ## 确定驱动参数
+                opt = uc.ChromeOptions()
+                opt.page_load_strategy = "eager"
+                # 将用户数据保存在 各系统临时目录下的 crawler_{self.class_name}_{随机字符串} 子目录
+                user_data_dir = tempfile.mkdtemp(prefix=f"crawler_{self.class_name}_")
+                opt.add_argument(f"--user-data-dir={user_data_dir}")
+                # 确保每个任务都使用不同的可用端口
+                debug_port = 9222 + TASK.NUM
+                if is_port_available(debug_port):
+                    opt.add_argument(f"--remote-debugging-port={debug_port}")
+                else:
+                    # 端口被占用，向后寻找下一个可用端口
+                    safe_port = find_free_port(debug_port+1, 10000)
+                    opt.add_argument(f"--remote-debugging-port={safe_port}")
+                # 添加反检测参数
+                opt.add_argument("--disable-blink-features=AutomationControlled")
+                # 提高 Linux 下兼容性
+                opt.add_argument("--no-sandbox")  # 禁用沙盒
+                opt.add_argument("--disable-dev-shm-usage")  # 禁用共享内存
+                ## 创建驱动实例并调整
+                load_dotenv()
+                ver = os.getenv("CHROME_VERSION")
+                driver_path = chromedriver_downloading(ver, CURRENT_DIR / "drivers")
+                driver = uc.Chrome(
+                    options=opt,
+                    driver_executable_path=driver_path
+                )
+                driver.get(self.u)
+                time.sleep(0.1)
+                driver.implicitly_wait(3)
+                driver.set_window_position(self.x_p, self.y_p)
+                driver.set_window_size(self.x_s, self.y_s)
+            logger.success(f'{self.name} successfully initialize driver !!!')
+            return driver
+        except Exception as e:
+            logger.critical(f'{self.name} failed to initialize driver !!!\n[{e}]')
+            raise RuntimeError(f"Failed to initialize driver")
 
+    # 常规的元素操作方法，需要先确保元素可见且可交互
+    def _ensure_element_visible(self, element):
+        """滚动到元素可见，不改变窗口状态"""
+        self.dr.execute_script(
+            "arguments[0].scrollIntoView({block: 'center', behavior: 'instant'});",
+            element
+        )
+        time.sleep(0.1)  # 等待滚动完成
+
+    def _safe_click(self, element):
+        """安全的点击操作"""
+        self._ensure_element_visible(element)
+        try:
+            # 点击元素
+            element.click()
+        except:
+            # 如果普通点击失败，用JS设置值
+            try:
+                self.dr.execute_script("arguments[0].click();", element)
+            except Exception as e:
+                raise RuntimeError(f"Failed to click element: {e}")
+
+    def _safe_send_keys(self, element, text):
+        """安全的输入文本操作"""
+        self._ensure_element_visible(element)
+        try:
+            # 先点击元素获得焦点
+            try:
+                element.click()
+            except:
+                self.dr.execute_script("arguments[0].click();", element)
+            # 清空原有内容
+            element.clear()
+            # 输入文本
+            element.send_keys(text)
+        except:
+            # 如果普通输入文本失败，用JS设置值
+            try:
+                if isinstance(key, str):
+                    self.dr.execute_script(f"arguments[0].value = '{text}';", element)
+            except Exception as e:
+                raise RuntimeError(f"Failed to send keys to element: {e}")
+
+    def _safe_select(self, element, by="text", value=None):
+        """安全选择方法"""
+        self._ensure_element_visible(element)
+        try:
+            select = Select(element)
+            if by == "text":
+                select.select_by_visible_text(value)
+            elif by == "value":
+                select.select_by_value(value)
+            elif by == "index":
+                select.select_by_index(int(value))
+        except:
+            pass
+
+    def _shot(self, max_nums=100):
+        folder_path = f"{self.log_dir}/{self.class_name}_ScreenShot"
+        os.makedirs(folder_path, exist_ok=True)
+        now = time.strftime("%Y%m%d%H%M%S", time.localtime())
+        tag = f"{self.name}_" + now
+        file_path = os.path.join(folder_path, f"{tag}.png")
+        self.dr.get_screenshot_as_file(file_path)
+        auto_del_files(folder_path, max_nums)
+
+    # 核心运行方法
     @abstractmethod
     def run(self):
         pass
@@ -113,46 +176,19 @@ class TASK(ABC):
 
     def reset_loc(self, mode, x_p=None, y_p=None, x_s=None, y_s=None):
         if mode == "cus":
-            if x_p is not None and y_p is not None and x_s is not None and y_s is not None:
-                self.x_p = x_p
-                self.y_p = y_p
-                self.x_s = x_s
-                self.y_s = y_s
-                self.dr.set_window_position(self.x_p, self.y_p)
-                self.dr.set_window_size(self.x_s, self.y_s)
+            if (x_p is not None) and (y_p is not None) and (x_s is not None) and (y_s is not None):
+                self.dr.set_window_position(x_p, y_p)
+                self.dr.set_window_size(x_s, y_s)
+            else:
+                raise Exception("Custom mode requires x_p, y_p, x_s, y_s parameters!")
         elif mode == "max":
             self.dr.maximize_window()
         elif mode == "min":
             self.dr.minimize_window()
-
-    def log(self, max_nums=100):
-        folder_path = f"log/{self.type}"
-        os.makedirs(folder_path, exist_ok=True)
-        now = time.strftime("%Y-%m-%d %H:%M:%S ", time.localtime())
-        while True:
-            try:
-                with open(f"{folder_path}/{self.type}.log", "a+") as f:
-                    f.write(now + f"{self.name} successfully run!\n")
-                    f.seek(0)
-                    lines = f.readlines()
-                    if len(lines) > max_nums:
-                        f.seek(0)
-                        f.truncate()
-                        f.writelines(lines[-max_nums:])
-                    break
-            except FileNotFoundError:
-                with open(f"{folder_path}/{self.type}.log", "w") as f0:
-                    f0.write("")
-                    pass
-
-    def shot(self, max_nums=100):
-        folder_path = f"log/{self.type}/{self.type}_ScreenShot"
-        os.makedirs(folder_path, exist_ok=True)
-        now = time.strftime("%Y%m%d%H%M%S", time.localtime())
-        tag = f"{self.name}_" + now
-        file_path = os.path.join(folder_path, f"{tag}.png")
-        self.dr.get_screenshot_as_file(file_path)
-        auto_del_files(folder_path, max_nums)
+        elif mode == "recover":
+            self.dr.set_window_position(self.x_p, self.y_p)
+            self.dr.set_window_size(self.x_s, self.y_s)
+        time.sleep(0.5)
 
     def __del__(self):
         self.dr.quit()
