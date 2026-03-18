@@ -12,8 +12,8 @@ from loguru import logger
 from tasks_se.core.task import TASK
 
 
-# AUTOGETSALE 是通过银豹系统获得某时间段每天的营业数据的任务
-class AUTOGETSALE(TASK):
+# POSPALGETDATA 是通过银豹系统获得某时间段每天的营业数据的任务
+class POSPALGETDATA(TASK):
     Num = 0
     _num_lock = threading.Lock()
 
@@ -25,7 +25,7 @@ class AUTOGETSALE(TASK):
         self.password = password
         self.period = time.strftime("%Y-%m-%d~%Y-%m-%d", time.localtime())
         self.result = None
-        self.name = f"{self.class_name}{AUTOGETSALE.Num}" if name is None else name
+        self.name = f"{self.class_name}{POSPALGETDATA.Num}" if name is None else name
         if self.display:
             self._check_cover_valid(cover)
             self.x_p = cover[0]
@@ -33,8 +33,8 @@ class AUTOGETSALE(TASK):
             self.x_s = cover[2]
             self.y_s = cover[3]
         self.dr = self._init_driver()
-        with AUTOGETSALE._num_lock:
-            AUTOGETSALE.Num += 1
+        with POSPALGETDATA._num_lock:
+            POSPALGETDATA.Num += 1
 
     # 根据 user_name 和 password 登录
     def _login(self):
@@ -58,7 +58,7 @@ class AUTOGETSALE(TASK):
 
     # 爬取银豹某时间段每天的数据
     def _get_data(self):
-        logger.info(f"Getting {self.period} data...")
+        logger.info(f"{self.name} is getting {self.period} data ...")
         # 获取起始与结束时间
         start_str, end_str = self.period.split('~')
         start_date = datetime.strptime(start_str, "%Y-%m-%d")
@@ -164,7 +164,7 @@ if __name__ == '__main__':
     load_dotenv()
     un = os.getenv("POSPAL_USERNAME")
     p = os.getenv("POSPAL_PASSWORD")
-    s = AUTOGETSALE(url, un, p)
+    s = POSPALGETDATA(url, un, p, display=True, cover=(0, 0, 1920, 1080))
     s.set_period("2025-6-1~2025-6-3")
     s.run()
     print(s.result)

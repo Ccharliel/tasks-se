@@ -6,7 +6,7 @@
 
 - `AUTOFILL`: 填写问卷星的任务
 - `AUTOSCREENSHOT`: 截取HTML课件每一页的任务  
-- `AUTOSCREENSHOT`: 通过银豹系统获得某时间段每天的营业数据的任务
+- `POSPALGETDATA`: 通过银豹系统获得某时间段每天的营业数据的任务
 - `SIMULATEOP`: 希施玛证券模拟平台进行操作的任务
 
 ## 安装

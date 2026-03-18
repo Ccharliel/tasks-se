@@ -105,6 +105,7 @@ class SIMULATEOP(TASK):
             raise RuntimeError("Find category failed")
 
     def find_balance(self):
+        logger.info(f"{self.name} is searching balance ...")
         try:
             balance_text = self.dr.find_element(By.XPATH, "//*[@id='pane-capitalInfo']/div/table/tr[2]/td[3]").text
             return balance_text
@@ -113,6 +114,7 @@ class SIMULATEOP(TASK):
 
     def operate(self, code, op, amount):
         try:
+            logger.info(f"{self.name} is operating ...")
             WebDriverWait(self.dr, 30).until(
                 EC.invisibility_of_element_located((By.CLASS_NAME, "el-dialog__wrapper"))
             )

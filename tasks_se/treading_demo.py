@@ -30,14 +30,14 @@ url2 = "https://beta33.pospal.cn/Report/BusinessSummaryV2"
 load_dotenv()
 un = os.getenv("POSPAL_USERNAME")
 p = os.getenv("POSPAL_PASSWORD")
-s2 = AUTOGETSALE(url2, un, p, display=True, cover=(400, 0, 400, 800))
+s2 = POSPALGETDATA(url2, un, p, display=True, cover=(400, 0, 400, 800))
 s2.set_period("2025-6-1~2025-6-3")
 
 url3 = "https://beta33.pospal.cn/Report/BusinessSummaryV2"
 load_dotenv()
 un = os.getenv("POSPAL_USERNAME")
 p = os.getenv("POSPAL_PASSWORD")
-s3 = AUTOGETSALE(url2, un, p)
+s3 = POSPALGETDATA(url2, un, p)
 s3.set_period("2025-7-1~2025-7-3")
 
 date = time.strftime("%Y-%m-%d", time.localtime())
