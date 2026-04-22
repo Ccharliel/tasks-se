@@ -211,8 +211,9 @@ class TASK(ABC):
     def run(self):
         pass
 
-    def run_with_schedule(self, point, date=None, if_block=True, *args, **kwargs):
-        hour, minute, second = point.split(':')
+    def run_with_schedule(self, point: str, date=None, if_block=True, *args, **kwargs):
+        time_parts = point.split(':')
+        hour, minute, second = map(int, time_parts)
         if if_block:
             scheduler = BlockingScheduler()
         else:
