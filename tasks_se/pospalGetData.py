@@ -176,10 +176,13 @@ class POSPALGETDATA(TASK):
         logger.success(f"{self.name} successfully set period to {self.__period} !!!")
 
     # 运行自动化任务
-    def run(self, type_dict=None):
+    def run(self, type_dict=None, if_auto=False):
         # type_dict 格式为 {查询数据类型:是否verbose}
         if type_dict is None:
             type_dict = {"sale": False}
+        if if_auto:
+            t = time.localtime()
+            self.set_period(time.strftime("%Y-%m-%d~%Y-%m-%d", t))
         try:
             start_time = time.time()
             start_time_str = time.strftime("%Y-%m-%d %H:%M:%S ", time.localtime())
@@ -218,4 +221,4 @@ if __name__ == '__main__':
     ex_time = datetime.now() + timedelta(seconds=1)
     date = ex_time.strftime("%Y-%m-%d")
     point = ex_time.strftime("%H:%M:%S")
-    s.run_with_schedule(point=point, date=date, type_dict={"sale": True})
+    s.run_with_schedule(point=point, date=date, type_dict={"sale": True}, if_auto=True)
