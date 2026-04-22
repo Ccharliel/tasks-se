@@ -82,7 +82,12 @@ def get_platform_chromedriver():
 
 def chromedriver_downloading(version, save_dir):
     """通过国内镜像下载指定版本浏览器驱动，返回驱动路径"""
-    version_tag = version.replace(".", "_")
+    try:
+        version_tag = version.replace(".", "_")
+        if not version_tag:
+            raise ValueError("Version resulted in empty string")
+    except Exception as e:
+        raise ValueError(f"Invalid version format: {version}")
     platform_tag = get_platform_chromedriver()
     os.makedirs(save_dir, exist_ok=True)
     save_path = os.path.join(save_dir, f"chromedriver-{version_tag}-{platform_tag}.exe")
