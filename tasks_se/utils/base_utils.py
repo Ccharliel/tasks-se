@@ -8,6 +8,16 @@ import platform
 import sys
 from loguru import logger
 import tkinter as tk
+import time
+
+from tasks_se.core.config import LOG_DIR
+
+
+os.makedirs(LOG_DIR, exist_ok=True)
+logger.add(f"{LOG_DIR}/driver.log",
+           rotation="1 MB",
+           filter=lambda record: record["function"] == "chromedriver_downloading")
+
 
 def get_screen_resolution():
     root = tk.Tk()
@@ -70,14 +80,6 @@ def get_platform_chromedriver():
     else:
         raise Exception(f"Unsupported platform: {system}")
 
-
-CURRENT_FILE = Path(__file__).resolve()
-CURRENT_DIR = CURRENT_FILE.parent
-log_dir = f"{CURRENT_DIR.parent}/logs"
-os.makedirs(log_dir, exist_ok=True)
-logger.add(f"{log_dir}/driver.log",
-           rotation="1 MB",
-           filter=lambda record: record["function"] == "chromedriver_downloading")
 def chromedriver_downloading(version, save_dir):
     """通过国内镜像下载指定版本浏览器驱动，返回驱动路径"""
     version_tag = version.replace(".", "_")
@@ -121,3 +123,19 @@ def chromedriver_downloading(version, save_dir):
             shutil.rmtree(tmp_dir)
 
 
+def wait_for_download(download_dir, timeout):
+    """等待下载完成，返回下载的文件名，会自动清理下载目录"""
+    start_time = time.time()
+    if os.path.exists(download_dir):
+        shutil.rmtree(download_dir)
+    os.makedirs(download_dir, exist_ok=True)
+    while time.time() - start_time < timeout:
+        files = os.listdir(download_dir)
+        # 检查是否有 .crdownload 临时文件
+        has_temp = any(f.endswith('.crdownload') for f in files)
+        # 检查是否有新文件（排除 .tmp 等临时文件）
+        completed = [f for f in files if not f.endswith(('.crdownload', '.tmp'))]
+        if not has_temp and completed:
+            return completed[0]  # 返回最新完成的文件
+        time.sleep(0.5)
+    raise TimeoutError("下载超时")

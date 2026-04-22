@@ -9,24 +9,21 @@ from selenium.webdriver.support.select import Select
 import threading
 from abc import ABC, abstractmethod
 import shutil
-from dotenv import load_dotenv
-from pathlib import Path
 from loguru import logger
 import sys
 
 from tasks_se.utils.base_utils import *
+from tasks_se.core.config import CORE_DIR, LOG_DIR, CHROME_VERSION
 
 
-CURRENT_FILE = Path(__file__).resolve()
-CURRENT_DIR = CURRENT_FILE.parent
-log_dir = f"{CURRENT_DIR.parent}/logs"
-os.makedirs(log_dir, exist_ok=True)
-logger.add(f"{log_dir}/cover.log",
+os.makedirs(LOG_DIR, exist_ok=True)
+logger.add(f"{LOG_DIR}/cover.log",
            rotation="1 MB",
            filter=lambda record: record["function"] == "_check_cover_valid")
-logger.add(f"{log_dir}/driver.log",
+logger.add(f"{LOG_DIR}/driver.log",
            rotation="1 MB",
            filter=lambda record: record["function"] == "_init_driver")
+
 
 # TASK 是进行selenium进行自动化操作的任务
 class TASK(ABC):
@@ -38,7 +35,9 @@ class TASK(ABC):
         self.u = u
         self.display = display
         self.class_name = self.__class__.__name__
-        self.log_dir = f"logs/{self.class_name}"
+        self.log_dir = os.path.join(LOG_DIR, self.class_name)
+        os.makedirs(self.log_dir, exist_ok=True)
+        self.download_dir = os.path.join(self.log_dir, "download")
         os.makedirs(self.log_dir, exist_ok=True)
         self.name = f"{self.class_name}{TASK.NUM}" if name is None else name
         # 子类 name 重写后再检查 cover 合法性并确定窗口位置
@@ -57,7 +56,8 @@ class TASK(ABC):
         screen_w, screen_h = get_screen_resolution()
         if not (0 <= cover[0] <= screen_w - cover[2] and
                 0 <= cover[1] <= screen_h - cover[3]):
-            logger.critical(f"{self.name} with invalid cover: cover must fit within the screen resolution !!!")
+            logger.critical(f"{self.name} with invalid cover: cover must fit within the screen resolution "
+                            f"({screen_w}, {screen_h}) !!!")
             raise ValueError("Invalid cover")
         for win in TASK.displayed_windows:
             if not (cover[0] + cover[2] <= win[0] or cover[0] >= win[0] + win[2] or
@@ -105,9 +105,7 @@ class TASK(ABC):
                 opt.add_argument("--no-sandbox")  # 禁用沙盒
                 opt.add_argument("--disable-dev-shm-usage")  # 禁用共享内存
                 ## 创建驱动实例并调整
-                load_dotenv()
-                ver = os.getenv("CHROME_VERSION")
-                driver_path = chromedriver_downloading(ver, CURRENT_DIR / "drivers")
+                driver_path = chromedriver_downloading(CHROME_VERSION, os.path.join(CORE_DIR, "drivers"))
                 driver = uc.Chrome(
                     options=opt,
                     driver_executable_path=driver_path
@@ -181,8 +179,22 @@ class TASK(ABC):
                 select.select_by_value(value)
             elif by == "index":
                 select.select_by_index(int(value))
-        except:
-            pass
+        except Exception as e:
+            raise RuntimeError(f"Failed to select option: {e}")
+
+    def _safe_download(self, element, download_path, timeout=60):
+        """安全的下载操作，点击元素后等待下载完成"""
+        self._ensure_element_visible(element)
+        try:
+            # 通过 CDP 强制接管下载，确保下载路径设置生效
+            self.dr.execute_cdp_cmd('Page.setDownloadBehavior', {
+                'behavior': 'allow',
+                'downloadPath': download_path
+            })
+            element.click()
+            wait_for_download(download_path, timeout)
+        except Exception as e:
+            raise RuntimeError(f"Failed to download file: {e}")
 
     def _shot(self, max_nums=100):
         folder_path = f"{self.log_dir}/{self.class_name}_ScreenShot"

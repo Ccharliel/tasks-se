@@ -14,3 +14,8 @@
 ```bash
 pip install git+https://github.com/Ccharliel/task-se.git@main
 ```
+
+## 更新
+```bash
+pip install --upgrade git+https://github.com/Ccharliel/task-se.git@main
+```

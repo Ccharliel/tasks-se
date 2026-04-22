@@ -1,14 +1,8 @@
 import pandas as pd
 from loguru import logger
+
 from tasks_se.utils.base_utils import *
-
-
-CURRENT_FILE = Path(__file__).resolve()
-CURRENT_DIR = CURRENT_FILE.parent
-log_dir = f"{CURRENT_DIR.parent}/logs/AUTOFILL"
-os.makedirs(log_dir, exist_ok=True)
-logger.add(f"{log_dir}/AUTOFILL.log", rotation="1 MB",
-           filter=lambda r: r["file"].name == f"{os.path.basename(__file__)}")
+from tasks_se.core.config import LOG_DIR
 
 
 # AUTOFILL 任务所需专属工具
@@ -30,6 +24,10 @@ def _creat_info(name: str):
 
 
 def get_info(name: str):
+    os.makedirs(f"{LOG_DIR}/AUTOFILL", exist_ok=True)
+    logger.add(f"{LOG_DIR}/AUTOFILL/AUTOFILL.log", rotation="1 MB",
+               filter=lambda r: r["file"].name == f"{os.path.basename(__file__)}")
+
     path = f"info/{name}.xlsx"
     ret = _creat_info(name)
     if ret == 0:
