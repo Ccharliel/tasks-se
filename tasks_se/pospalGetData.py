@@ -8,6 +8,7 @@ from selenium.webdriver.support import expected_conditions as EC
 import threading
 import pandas as pd
 from loguru import logger
+from sqlalchemy import create_engine
 
 from tasks_se.core.task import TASK
 
@@ -161,6 +162,13 @@ class POSPALGETDATA(TASK):
         df = pd.concat(data_list)
         return df
 
+    def _save_to_database(self, database_url):
+        if self.result.empty:
+            logger.warning(f"{self.name} has no data to save to database !!!")
+            return
+        engine = create_engine(database_url)
+        self.result.to_sql('sale_data', engine, if_exists='append')
+
     # 手动设置想获取数据的时间段
     def set_period(self, period: str = ''):
         try:
@@ -176,11 +184,11 @@ class POSPALGETDATA(TASK):
         logger.success(f"{self.name} successfully set period to {self.__period} !!!")
 
     # 运行自动化任务
-    def run(self, type_dict=None, if_auto=False):
+    def run(self, type_dict=None, database_url: str = None):
         # type_dict 格式为 {查询数据类型:是否verbose}
         if type_dict is None:
             type_dict = {"sale": False}
-        if if_auto:
+        if database_url is not None:
             t = time.localtime()
             self.set_period(time.strftime("%Y-%m-%d~%Y-%m-%d", t))
         try:
@@ -196,6 +204,11 @@ class POSPALGETDATA(TASK):
             end_time = time.time()
             time_cost = end_time - start_time
             logger.success(f'{self.name} successfully run !!! [start:{start_time_str} | cost:{time_cost}s]')
+            if database_url is not None:
+                try:
+                    self._save_to_database(database_url)
+                except Exception as e:
+                    logger.critical(f"{self.name} failed to save data to database !!!\n[{e}]")
         except Exception as e:
             logger.critical(f'{self.name} failed to run !!!\n[{e}]')
         finally:

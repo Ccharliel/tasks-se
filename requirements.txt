@@ -20,6 +20,8 @@ charset-normalizer==3.4.4
     # via requests
 colorama==0.4.6
     # via loguru
+greenlet==3.4.0
+    # via sqlalchemy
 h11==0.16.0
     # via wsproto
 idna==3.11
@@ -64,6 +66,8 @@ sniffio==1.3.1
     # via trio
 sortedcontainers==2.4.0
     # via trio
+sqlalchemy==2.0.49
+    # via -r requirements.in
 trio==0.33.0
     # via
     #   selenium
@@ -71,7 +75,9 @@ trio==0.33.0
 trio-websocket==0.12.2
     # via selenium
 typing-extensions==4.15.0
-    # via selenium
+    # via
+    #   selenium
+    #   sqlalchemy
 tzdata==2025.3
     # via
     #   pandas

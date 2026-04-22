@@ -8,6 +8,7 @@ undetected_chromedriver
 numpy
 pandas
 python-calamine
+sqlalchemy
 
 # 工具类
 python-dotenv
