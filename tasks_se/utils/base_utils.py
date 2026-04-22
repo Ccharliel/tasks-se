@@ -17,6 +17,9 @@ os.makedirs(LOG_DIR, exist_ok=True)
 logger.add(f"{LOG_DIR}/driver.log",
            rotation="1 MB",
            filter=lambda record: record["function"] == "chromedriver_downloading")
+logger.add(f"{LOG_DIR}/download.log",
+           rotation="1 MB",
+           filter=lambda record: record["function"] == "wait_for_download")
 
 
 def get_screen_resolution():
@@ -134,6 +137,7 @@ def wait_for_download(download_dir, timeout):
     if os.path.exists(download_dir):
         shutil.rmtree(download_dir)
     os.makedirs(download_dir, exist_ok=True)
+    logger.info(f"Waiting for download to complete in {download_dir} ...")
     while time.time() - start_time < timeout:
         files = os.listdir(download_dir)
         # 检查是否有 .crdownload 临时文件
@@ -143,4 +147,5 @@ def wait_for_download(download_dir, timeout):
         if not has_temp and completed:
             return completed[0]  # 返回最新完成的文件
         time.sleep(0.5)
-    raise TimeoutError("下载超时")
+    logger.error(f"Download timed out after waiting for {timeout} seconds")
+    raise TimeoutError(f"Download timed out")
