@@ -9,6 +9,7 @@ numpy
 pandas
 python-calamine
 sqlalchemy
+pymysql
 
 # 工具类
 python-dotenv

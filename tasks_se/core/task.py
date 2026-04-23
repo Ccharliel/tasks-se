@@ -47,6 +47,7 @@ class TASK(ABC):
         self.x_s = None
         self.y_s = None
         self.dr = None  # 子类 name 重写后再初始化驱动
+        self.scheduler = None
         with TASK._num_lock:
             TASK.NUM += 1
 
@@ -223,7 +224,7 @@ class TASK(ABC):
         else:
             scheduler.add_job(self.run, 'date', run_date=date + ' ' + point, args=args, kwargs=kwargs)
         scheduler.start()
-        return scheduler
+        self.scheduler = scheduler
 
     def __del__(self):
         self.dr.quit()
