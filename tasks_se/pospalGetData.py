@@ -186,7 +186,7 @@ class POSPALGETDATA(TASK):
         logger.success(f"{self.name} successfully set period to {self.__period} !!!")
 
     # 运行自动化任务
-    def run(self, type_dict=None, database_url: str = None):
+    def run(self, type_dict: dict = None, database_url: str = None):
         # type_dict 格式为 {查询数据类型:是否verbose}
         if type_dict is None:
             type_dict = {"sale": False}

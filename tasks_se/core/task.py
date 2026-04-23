@@ -223,6 +223,7 @@ class TASK(ABC):
         else:
             scheduler.add_job(self.run, 'date', run_date=date + ' ' + point, args=args, kwargs=kwargs)
         scheduler.start()
+        return scheduler
 
     def __del__(self):
         self.dr.quit()
