@@ -237,7 +237,7 @@ class TASK(ABC):
                     break
         try:
             if date is None:
-                logger.info(f"Adding job at point everyday for {self.name}")
+                logger.info(f"Adding job at {point} everyday for {self.name}")
                 scheduler.add_job(self.run, 'cron', hour=hour, minute=minute, second=second, args=args, kwargs=kwargs)
             else:
                 run_date = date + ' ' + point
