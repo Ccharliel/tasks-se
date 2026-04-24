@@ -143,7 +143,7 @@ def wait_for_download(download_dir, timeout):
         # 检查是否有 .crdownload 临时文件
         has_temp = any(f.endswith('.crdownload') for f in files)
         # 检查是否有新文件（排除 .tmp 等临时文件）
-        completed = [f for f in files if not f.endswith(('.crdownload', '.tmp'))]
+        completed = [f for f in files if not f.endswith(('.crdownload', '.tmp', '.htm'))]
         if not has_temp and completed:
             logger.success(f"Download completed: {completed[0]}")
             return completed[0]  # 返回最新完成的文件
