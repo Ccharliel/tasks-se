@@ -9,10 +9,9 @@ import threading
 import pandas as pd
 import numpy as np
 from loguru import logger
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, text, String
 
 from tasks_se.core.task import TASK
-
 
 # POSPALGETDATA 是通过银豹系统获得某时间段每天的营业数据的任务
 class POSPALGETDATA(TASK):
@@ -26,10 +25,11 @@ class POSPALGETDATA(TASK):
         self.user_name = user_name
         self.password = password
         t = time.localtime()
+        self._date_tag = "date_tag"
         self.__period = time.strftime("%Y-%m-%d~%Y-%m-%d", t)
         self.__start_date = datetime(*t[:3])
         self.__end_date = datetime(*t[:3])
-        self.result = pd.DataFrame()
+        self.results = list()
         self.name = f"{self.class_name}{POSPALGETDATA.Num}" if name is None else name
         if self.display:
             self._check_cover_valid(cover)
@@ -77,7 +77,6 @@ class POSPALGETDATA(TASK):
                 files = [f for f in os.listdir(download_path) if f.endswith('.xlsx')]
                 latest_file = max([os.path.join(download_path, f) for f in files], key=os.path.getctime)
                 df = pd.read_excel(latest_file, engine='calamine')
-                return df
             else:
                 # 数据包括：销售额（产品 / 服务）
                 sale_info = self.dr.find_element(By.XPATH, '//*[@id="mainTable"]/tbody/tr[1]/td[2]/div')
@@ -90,9 +89,10 @@ class POSPALGETDATA(TASK):
                 sale_num = sale_info.find_element(By.XPATH, './span[4]').text
                 df["单数"] = sale_num
                 df['单数'] = df['单数'].astype(int)
-        df['日期'] = date
-        df['日期'] = df['日期'].astype(str)
-        df = df.set_index('日期')
+        # date_tag 作为是否查询过该日期的标识
+        df[self._date_tag] = date
+        df[self._date_tag] = df[self._date_tag].astype(str)
+        df = df.set_index(self._date_tag)
         return df
 
     def _switch_page(self, type, verbose):
@@ -163,15 +163,36 @@ class POSPALGETDATA(TASK):
         df = pd.concat(data_list)
         return df
 
-    def _save_to_database(self, database_url):
-        logger.info(f"{self.name} is saving data to database !!!")
-        if self.result.empty:
-            logger.warning(f"{self.name} has no data to save to database !!!")
-            return
-        engine = create_engine(database_url)
-        self.result = self.result.replace([np.nan, np.inf, -np.inf], None)
-        self.result.to_sql('sale_data', engine, if_exists='append')
-        logger.success(f"{self.name} successfully save data to database !!!")
+    def _save_to_database(self, df, database_url, table_name):
+        try:
+            logger.info(f"{self.name} is saving data to database: {database_url}")
+            if df.empty:
+                logger.warning(f"No data to save to database !!!")
+                return
+            engine = create_engine(database_url)
+            df = df.replace([np.nan, np.inf, -np.inf], None)
+            # 写入空表，如果表不存在就创建
+            df.iloc[:0].to_sql(table_name, engine, if_exists='append', index=True, dtype={self._date_tag: String(20)})
+            current_dates = set(df.index.unique())
+            if current_dates:
+                # 查询哪些时间点已存在
+                placeholders = ','.join(['%s'] * len(current_dates))
+                query = f"SELECT DISTINCT {self._date_tag} FROM {table_name} WHERE {self._date_tag} IN ({placeholders})"
+                # 使用 pandas 读取，自动处理参数
+                existing_df = pd.read_sql(query, engine, params=tuple(current_dates))
+                existing_dates = set(existing_df[f'{self._date_tag}'])
+                # 只保留未存在日期的数据
+                df_new = df.loc[~df.index.isin(existing_dates)].copy(deep=True)
+            # 插入新数据
+            if not df_new.empty:
+                df_new.to_sql(table_name, engine, if_exists='append', index=True, dtype={self._date_tag: String(20)})
+                logger.success(
+                    f"{self.name} successfully save {len(df_new)} records "
+                    f"for {len(df_new.index.unique())} new dates to database: {database_url} ")
+            else:
+                logger.info(f"{self.name} all dates already exist in database, no data to save")
+        except Exception as e:
+            logger.warning(f"{self.name} failed to save data to database: {database_url} !!!\n[{e}]")
 
     # 手动设置想获取数据的时间段
     def set_period(self, period: str = ''):
@@ -188,11 +209,15 @@ class POSPALGETDATA(TASK):
         logger.success(f"{self.name} successfully set period to {self.__period} !!!")
 
     # 运行自动化任务
-    def run(self, type_dict: dict = None, database_url: str = None):
-        # type_dict 格式为 {查询数据类型:是否verbose}
-        if type_dict is None:
-            type_dict = {"sale": False}
-        if database_url is not None:
+    def run(self, task_list: list(dict()) = [], if_with_schedule=False):
+        # task_list 中 dict 格式如下
+        # {(str)查询数据类型: {"verbose": (bool)是否verbose, "database_url": (str)数据库的url}}
+        if len(task_list) == 0:
+            # 默认值
+            defalut_type_dict = {"sale": {"verbose": False, "database_url": None}}
+            task_list.append(defalut_type_dict)
+        if if_with_schedule:
+            # 如果定时运行，默认获取当天数据
             t = time.localtime()
             self.set_period(time.strftime("%Y-%m-%d~%Y-%m-%d", t))
         try:
@@ -200,19 +225,16 @@ class POSPALGETDATA(TASK):
             start_time_str = time.strftime("%Y-%m-%d %H:%M:%S ", time.localtime())
             self._login()
             time.sleep(1)
-            df_list = []
-            for ty, ty_v in type_dict.items():
-                df = self._get_data(ty, ty_v)
-                df_list.append(df)
-            self.result = pd.concat(df_list, axis=1)
+            for type_dict in task_list:
+                for ty, ty_details in type_dict.items():
+                    df = self._get_data(ty, ty_details["verbose"])
+                    if ty_details["database_url"] is not None:
+                        table_name = ty + "_data"
+                        self._save_to_database(df, ty_details["database_url"], table_name)
+                    self.results.append(df)
             end_time = time.time()
             time_cost = end_time - start_time
             logger.success(f'{self.name} successfully run !!! [start:{start_time_str} | cost:{time_cost}s]')
-            if database_url is not None:
-                try:
-                    self._save_to_database(database_url)
-                except Exception as e:
-                    logger.critical(f"{self.name} failed to save data to database !!!\n[{e}]")
         except Exception as e:
             logger.critical(f'{self.name} failed to run !!!\n[{e}]')
         finally:
@@ -231,11 +253,18 @@ if __name__ == '__main__':
     un = os.getenv("POSPAL_USERNAME")
     p = os.getenv("POSPAL_PASSWORD")
     s = POSPALGETDATA(url, un, p, display=True, cover=(0, 0, 1440, 900))
-    s.set_period("2025-6-1~2025-6-3")
-    # s.run({"sale": True})
-    # print(s.result)
-    # 测试定时任务
-    ex_time = datetime.now() + timedelta(seconds=1)
-    date = ex_time.strftime("%Y-%m-%d")
-    point = ex_time.strftime("%H:%M:%S")
-    s.run_with_schedule(point=point, date=date, type_dict={"sale": True})
+    s.set_period("2025-6-1~2025-6-1")
+    # 测试运行
+    s.run(task_list=[{"sale": {"verbose": True,
+                               "database_url": "mysql+pymysql://root:123456@localhost:3306/pospal"}}])
+    # # 测试运行定时任务
+    # ex_time = datetime.now() + timedelta(seconds=1)
+    # date = ex_time.strftime("%Y-%m-%d")
+    # point = ex_time.strftime("%H:%M:%S")
+    # s.run_with_schedule(point=point, date=date,
+    #                     task_list=[{"sale": {"verbose": True,
+    #                                          "database_url": "mysql+pymysql://root:123456@localhost:3306/pospal"}}],
+    #                     if_with_schedule=True)
+
+    for idx, r in enumerate(s.results):
+        print(f"result{idx}: \n{r}")
