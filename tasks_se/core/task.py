@@ -96,14 +96,14 @@ class TASK(ABC):
                 # 将用户数据保存在 各系统临时目录下的 crawler_{self.class_name}_{随机字符串} 子目录
                 user_data_dir = tempfile.mkdtemp(prefix=f"crawler_{self.class_name}_")
                 opt.add_argument(f"--user-data-dir={user_data_dir}")
-                # 确保每个任务都使用不同的可用端口
-                debug_port = 9222 + TASK.NUM
-                if is_port_available(debug_port):
-                    opt.add_argument(f"--remote-debugging-port={debug_port}")
-                else:
-                    # 端口被占用，向后寻找下一个可用端口
-                    safe_port = find_free_port(debug_port+1, 10000)
-                    opt.add_argument(f"--remote-debugging-port={safe_port}")
+                # # 确保每个任务都使用不同的可用端口
+                # debug_port = 9222 + TASK.NUM
+                # if is_port_available(debug_port):
+                #     opt.add_argument(f"--remote-debugging-port={debug_port}")
+                # else:
+                #     # 端口被占用，向后寻找下一个可用端口
+                #     safe_port = find_free_port(debug_port+1, 10000)
+                #     opt.add_argument(f"--remote-debugging-port={safe_port}")
                 # 添加反检测参数
                 opt.add_argument("--disable-blink-features=AutomationControlled")
                 # 提高 Linux 下兼容性
