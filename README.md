@@ -25,5 +25,5 @@ pip install git+https://github.com/Ccharliel/tasks-se.git@main
 ```
 或者
 ```bash
-pip install git+https://gitee.com/Ccharliel/tasks-se.git@main
+pip install git+https://gitee.com/charliechen666/tasks-se.git@main --trusted-host gitee.com
 ```
