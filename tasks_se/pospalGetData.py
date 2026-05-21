@@ -53,7 +53,7 @@ class POSPALGETDATA(TASK):
         """获取 start_date (只读)"""
         return self.__start_date
 
-    @property
+
     def end_date(self):
         """获取 end_date (只读)"""
         return self.__end_date
@@ -212,11 +212,12 @@ class POSPALGETDATA(TASK):
         logger.success(f"{self.name} successfully set period to {self.__period} !!!")
 
     # 运行自动化任务
-    def run(self, task_list: list(dict()) = [], if_with_schedule=False):
+    def run(self, task_list: list[dict] = None, if_with_schedule=False):
         # task_list 中 dict 格式如下
         # {(str)查询数据类型: {"verbose": (bool)是否verbose, "database_url": (str)数据库的url}}
-        if len(task_list) == 0:
+        if task_list is None:
             # 默认值
+            task_list = []
             defalut_type_dict = {"sale": {"verbose": False, "database_url": None}}
             task_list.append(defalut_type_dict)
         if if_with_schedule:

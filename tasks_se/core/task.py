@@ -5,17 +5,19 @@ from typing import Tuple, Any
 from apscheduler.schedulers.blocking import BlockingScheduler
 from apscheduler.schedulers.background import BackgroundScheduler
 import undetected_chromedriver as uc
-from selenium.webdriver.edge.options import Options
+from selenium import webdriver
+from selenium.webdriver.chrome.options import Options
+from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.support.select import Select
 import threading
 from abc import ABC, abstractmethod
 import shutil
 from loguru import logger
 import sys
+import subprocess
 
 from tasks_se.utils.base_utils import *
-from tasks_se.core.config import CORE_DIR, LOG_DIR, CHROME_VERSION
-
+from tasks_se.core.config import CORE_DIR, LOG_DIR, CHROME_VERSION, CHROME_VERSION_TESTING
 
 os.makedirs(LOG_DIR, exist_ok=True)
 logger.add(f"{LOG_DIR}/cover.log",
@@ -74,7 +76,8 @@ class TASK(ABC):
 
     def _init_driver(self, shared_dr=None):
         """初始化驱动"""
-        ### 共享已有驱动情况
+        os.environ["SE_AVOID_STATS"] = "true"  # 部分版本有效
+        os.environ["SE_OFFLINE"] = "true"       # 阻止联网下载驱动
         try:
             logger.info(f'{self.name} is initializing driver ...')
             if shared_dr:
@@ -86,40 +89,49 @@ class TASK(ABC):
                 driver.get(current_url)
             ### 创建新驱动情况
             else:
-                ## 确定驱动参数
-                opt = uc.ChromeOptions()
-                opt.page_load_strategy = "eager"
-                # 无头模式
-                if not self.display:
-                    opt.add_argument("--headless=new")  # chrome 109+ 的无头模式
-                    opt.add_argument('--window-size=1920,1080')  # 设置无头模式下的窗口大小
-                # 将用户数据保存在 各系统临时目录下的 crawler_{self.class_name}_{随机字符串} 子目录
-                user_data_dir = tempfile.mkdtemp(prefix=f"crawler_{self.class_name}_")
-                opt.add_argument(f"--user-data-dir={user_data_dir}")
-                # # 确保每个任务都使用不同的可用端口
-                # debug_port = 9222 + TASK.NUM
-                # if is_port_available(debug_port):
-                #     opt.add_argument(f"--remote-debugging-port={debug_port}")
-                # else:
-                #     # 端口被占用，向后寻找下一个可用端口
-                #     safe_port = find_free_port(debug_port+1, 10000)
-                #     opt.add_argument(f"--remote-debugging-port={safe_port}")
-                # 添加反检测参数
-                opt.add_argument("--disable-blink-features=AutomationControlled")
-                # 提高 Linux 下兼容性
-                opt.add_argument("--no-sandbox")  # 禁用沙盒
-                opt.add_argument("--disable-dev-shm-usage")  # 禁用共享内存
-                ## 创建驱动实例并调整
-                # 不手动管理 chromedriver 版本了，直接让 undetected_chromedriver 自动适配系统上的 Chrome 浏览器版本
-                # driver_path = chromedriver_downloading(CHROME_VERSION, os.path.join(CORE_DIR, "drivers"))
-                chrome_path = find_chrome_executable()
-                logger.info(f'{self.name} find chrome executable at {chrome_path} ...')
-                driver = uc.Chrome(
-                    options=opt,
-                    chrome_executable_path=chrome_path,
-                    version_main=int(CHROME_VERSION.split(".")[0]),
-                    use_subprocess=True
-                )
+                def _set_option(option, chrome_path=None):
+                    """设置通用驱动选项"""
+                    # 指定 chrome 浏览器路径
+                    if chrome_path:
+                        option.binary_location = chrome_path
+                    # 提高页面加载速度，减少等待时间
+                    option.page_load_strategy = "eager"
+                    # 无头模式
+                    if not self.display:
+                        option.add_argument("--headless=new")  # chrome 109+ 的无头模式
+                        option.add_argument('--window-size=1920,1080')  # 设置无头模式下的窗口大小
+                    # 将用户数据保存在 各系统临时目录下的 crawler_{self.class_name}_{随机字符串} 子目录
+                    user_data_dir = tempfile.mkdtemp(prefix=f"crawler_{self.class_name}_")
+                    option.add_argument(f"--user-data-dir={user_data_dir}")
+                    # 提高 Linux 下兼容性
+                    option.add_argument("--no-sandbox")  # 禁用沙盒
+                    option.add_argument("--disable-dev-shm-usage")  # 禁用共享内存
+                    option.add_argument("--disable-gpu") # 禁用显卡硬件加速
+                    option.add_argument("--disable-blink-features=AutomationControlled") # 添加反检测参数
+                    return option
+                try:
+                    # 优先尝试使用 undetected_chromedriver
+                    logger.info(f'{self.name} is trying to use undetected_chromedriver ...')
+                    raise ValueError("my_erro")
+                    ## 确定驱动参数
+                    # raise ValueError
+                    opt = uc.ChromeOptions()
+                    opt = _set_option(opt)
+                    # 确保每个任务都使用不同的可用端口
+                    task_port = find_free_port(9222 + TASK.NUM, 10000)
+                    opt.add_argument(f"--remote-debugging-port={task_port}")
+                    ## 创建驱动实例并调整
+                    # 直接让 undetected_chromedriver 自动适配 Chrome 浏览器版本
+                    driver = uc.Chrome(options=opt, version_main=int(CHROME_VERSION.split(".")[0]))
+                except Exception as e:
+                    # undetected_chromedriver 失败后降级使用 webdriver (本地)
+                    logger.warning(f'{self.name} failed to use undetected_chromedriver \n[{e}]')
+                    logger.info(f'{self.name} is trying to use local webdriver ...')
+                    opt = Options()
+                    chrome_path, driver_path = chrome_driver_downloading(CHROME_VERSION_TESTING, CORE_DIR)
+                    opt = _set_option(opt, chrome_path)
+                    service = Service(executable_path=driver_path)
+                    driver = webdriver.Chrome(options=opt, service=service)
                 driver.get(self.u)
                 time.sleep(0.1)
                 driver.implicitly_wait(3)
@@ -254,4 +266,4 @@ class TASK(ABC):
             logger.warning(f"Failed to add job for {self.name} ({e})")
 
     def __del__(self):
-        self.dr.quit()
+        pass

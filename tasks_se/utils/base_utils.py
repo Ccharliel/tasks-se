@@ -40,17 +40,17 @@ def auto_del_files(folder_path, max_nums):
         for old_file in all_files[: -max_nums]:
             old_file.unlink()
 
-def is_port_available(port):
-    """检查端口是否可用"""
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s: # 相当于说：创建一个使用IPv4地址的TCP连接
-        try:
-            s.bind(('127.0.0.1', port))
-            return True
-        except socket.error:
-            return False
+# def is_port_available(port):
+#     """检查端口是否可用"""
+#     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s: # 相当于说：创建一个使用IPv4地址的TCP连接
+#         try:
+#             s.bind(('127.0.0.1', port))
+#             return True
+#         except socket.error:
+#             return False
 
 def find_free_port(start_port, max_attempts):
-    """查找空闲端口"""
+    """查找空闲端口（端口被占用，向后寻找下一个可用端口）"""
     for port in range(start_port, start_port + max_attempts):
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
             try:
@@ -59,38 +59,6 @@ def find_free_port(start_port, max_attempts):
             except socket.error:
                 continue
     raise Exception("找不到可用端口")
-
-def find_chrome_executable():
-    """
-    全平台自动搜索 Chrome/Chromium 浏览器路径
-    不写死任何路径，自动查找，永远有效
-    """
-    system = sys.platform
-    # ==================== Windows 查找 ====================
-    if system == "win32":
-        paths = [
-            shutil.which("chrome.exe"),
-            shutil.which("chromium.exe"),
-            os.path.join(os.getenv("PROGRAMFILES", ""), "Google/Chrome/Application/chrome.exe"),
-            os.path.join(os.getenv("PROGRAMFILES(X86)", ""), "Google/Chrome/Application/chrome.exe"),
-        ]
-        for p in paths:
-            if p and os.path.exists(p):
-                return p
-    # ==================== Linux 查找（自动搜索） ====================
-    elif system == "linux":
-        commands = ["google-chrome", "chrome", "chromium", "chromium-browser"]
-        for cmd in commands:
-            path = shutil.which(cmd)
-            if path:
-                return path
-    # ==================== Mac 查找 ====================
-    elif system == "darwin":
-        path = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
-        if os.path.exists(path):
-            return path
-    # 找不到返回 None，让 uc 自动尝试
-    return None
 
 def get_platform_chromedriver():
     "获取当前平台信息, 返回符合 ChromeDriver 命名规范的字符串"
@@ -114,10 +82,8 @@ def get_platform_chromedriver():
     else:
         raise Exception(f"Unsupported platform: {system}")
 
-def chromedriver_downloading(version, save_dir):
-    """通过国内镜像下载指定版本浏览器驱动，返回驱动路径"""
-    zip_path = None
-    tmp_dir = None
+def chrome_driver_downloading(version, save_dir):
+    """下载指定版本 chrome for testing 的浏览器以及驱动，返回浏览器路径以及驱动路径"""
     try:
         version_tag = version.replace(".", "_")
         if not version_tag:
@@ -129,44 +95,102 @@ def chromedriver_downloading(version, save_dir):
         extention = ".exe"
     else:
         extention = ''
-    os.makedirs(save_dir, exist_ok=True)
-    save_path = os.path.join(save_dir, f"chromedriver-{version_tag}-{platform_tag}{extention}")
-    save_path = os.path.abspath(save_path)
-    if os.path.exists(save_path):
-        logger.info(f"ChromeDriver existed: {save_path}")
-        return save_path
-    try:
-        logger.info(f"Downloading ChromeDriver {version} for {platform_tag} ...")
-        url_huawei = f"https://repo.huaweicloud.com/chromedriver/{version}/chromedriver-{platform_tag}.zip"
-        # 下载 zip
-        response = requests.get(url_huawei)
-        if response.status_code != 200:
-            raise Exception(f"mirro erro: {response.status_code} ({url_huawei})")
-        # 保存 zip
-        zip_path = save_path + ".zip"
-        with open(zip_path, 'wb') as f:
-            f.write(response.content)
-        # 解压
-        tmp_dir = os.path.join(save_dir, "temp_driver")
-        with zipfile.ZipFile(zip_path, 'r') as zip_ref:
-            zip_ref.extractall(tmp_dir)
-        # 移动 chromedrive 文件
-        for root, dirs, files in os.walk(tmp_dir):
-            if f"chromedriver{extention}" in files:
-                src = os.path.join(root, f"chromedriver{extention}")
-                shutil.move(src, save_path)
-                os.chmod(save_path, 0o755) # 加权限，全局通用，Windows不报错，Linux/Mac正常生效
-                break
-        logger.success(f"Successfully download ChromeDriver: {save_path}")
-        return save_path
-    except Exception as e:
-        raise RuntimeError(f"Failed do download ChromeDriver: {e}")
-    finally:
-        # 清理临时文件
-        if zip_path and os.path.exists(zip_path):
-            os.remove(zip_path)
-        if tmp_dir and os.path.exists(tmp_dir):
-            shutil.rmtree(tmp_dir)
+
+    chrome_dir = os.path.join(save_dir, "chromes", f"chrome-{version_tag}", f"chrome-{version_tag}-{platform_tag}")
+    os.makedirs(chrome_dir, exist_ok=True)
+    chrome_save_path = os.path.abspath(os.path.join(chrome_dir, f"chrome{extention}"))
+    driver_dir = os.path.join(save_dir, "drivers", f"chromedriver-{version_tag}")
+    os.makedirs(driver_dir, exist_ok=True)
+    driver_save_path = os.path.abspath(os.path.join(driver_dir, f"chromedriver-{version_tag}-{platform_tag}{extention}"))
+    if_download_chrome, if_download_driver = True, True
+    if os.path.exists(chrome_save_path):
+        logger.info(f"Chrome existed: {chrome_save_path}")
+        if_download_chrome = False
+    if os.path.exists(driver_save_path):
+        logger.info(f"ChromeDriver existed: {driver_save_path}")
+        if_download_driver = False
+
+    if if_download_chrome or if_download_driver:
+        def download_chrome_for_testing(version, platform_tag, is_driver=False):
+            """根据版本和平台标签下载 chrome for testing (driver) 的二进制内容"""
+            base_url_list = [
+                "https://cdn.npmmirror.com/binaries/chrome-for-testing",
+                "https://storage.googleapis.com/chrome-for-testing-public"
+            ]
+            for base_url in base_url_list:
+                logger.info(f"Trying download from origin: {base_url}")
+                url = (f"{base_url}/{version}/{platform_tag}/"
+                       f"{'chromedriver' if is_driver else 'chrome'}-{platform_tag}.zip")
+                try:
+                    response = requests.get(url, timeout=(5, 60))
+                    response.raise_for_status()
+                    logger.success(f"Successfully download from origin: {base_url}")
+                    return response.content
+                except Exception as e:
+                    logger.warning(f"Failed download from origin: {base_url}")
+                    continue
+            raise TimeoutError(f"Failed download {'ChromeDriver' if is_driver else 'Chrome'} from any origin")
+
+        def write_and_extract_zip(binary_content, save_dir):
+            # 写入 zip
+            tmp_zip_path = os.path.join(save_dir, "tmp.zip")
+            with open(tmp_zip_path, 'wb') as f:
+                f.write(binary_content)
+            # 解压
+            tmp_dir = os.path.join(save_dir, "tmp")
+            with zipfile.ZipFile(tmp_zip_path, 'r') as zip_ref:
+                zip_ref.extractall(tmp_dir)
+            return tmp_zip_path, tmp_dir
+
+        if if_download_chrome:
+            try:
+                tmp_zip_path, tmp_dir = None, None
+                logger.info(f"Downloading Chrome {version} for {platform_tag} ...")
+                zip_binary = download_chrome_for_testing(version, platform_tag, False)
+                tmp_zip_path, tmp_dir = write_and_extract_zip(zip_binary, chrome_dir)
+                # 移动 chrome 所有文件
+                for item in os.listdir(tmp_dir):
+                    src_path = os.path.join(tmp_dir, item)
+                    if os.path.isdir(src_path):
+                        for sub_item in os.listdir(src_path):
+                            sub_src = os.path.join(src_path, sub_item)
+                            sub_dst = os.path.join(chrome_dir, sub_item)
+                            shutil.move(sub_src, sub_dst)
+                    else:
+                        shutil.move(src_path, os.path.join(chrome_dir, item))
+                logger.success(f"Successfully download Chrome: {chrome_save_path}")
+            except Exception as e:
+                raise RuntimeError(f"Failed do download Chrome: {e}")
+            finally:
+                # 清理临时文件
+                if tmp_zip_path and os.path.exists(tmp_zip_path):
+                    os.remove(tmp_zip_path)
+                if tmp_dir and os.path.exists(tmp_dir):
+                    shutil.rmtree(tmp_dir)
+        if if_download_driver:
+            try:
+                tmp_zip_path, tmp_dir = None, None
+                logger.info(f"Downloading ChromeDriver {version} for {platform_tag} ...")
+                zip_binary = download_chrome_for_testing(version, platform_tag, True)
+                tmp_zip_path, tmp_dir = write_and_extract_zip(zip_binary, driver_dir)
+                # 移动 chromedrive 文件
+                for root, dirs, files in os.walk(tmp_dir):
+                    if f"chromedriver{extention}" in files:
+                        src = os.path.join(root, f"chromedriver{extention}")
+                        shutil.move(src, driver_save_path)
+                        os.chmod(driver_save_path, 0o755) # 加权限，全局通用，Windows不报错，Linux/Mac正常生效
+                        break
+                logger.success(f"Successfully download ChromeDriver: {driver_save_path}")
+            except Exception as e:
+                raise RuntimeError(f"Failed do download ChromeDriver: {e}")
+            finally:
+                # 清理临时文件
+                if tmp_zip_path and os.path.exists(tmp_zip_path):
+                    os.remove(tmp_zip_path)
+                if tmp_dir and os.path.exists(tmp_dir):
+                    shutil.rmtree(tmp_dir)
+
+    return chrome_save_path, driver_save_path
 
 
 def wait_for_download(download_dir, timeout):

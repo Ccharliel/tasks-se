@@ -1,6 +1,7 @@
 # My Tasks using selenium
 
-这个库中包含了许多类，分别代表我用 selenium 处理的不同任务
+这个库中包含了许多类，分别代表用 selenium 处理的不同任务
+请确保安装了和机器匹配的 chrome 浏览器版本
 
 ## 包含的类
 
