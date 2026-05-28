@@ -226,18 +226,22 @@ class POSPALGETDATA(TASK):
 
     # 运行自动化任务
     def run(self, if_with_schedule=False, task_list: list[dict] = None):
-        # task_list 中 dict 格式如下
-        # {(str)查询数据类型: {"verbose": (bool)是否verbose, "database_url": (str)数据库的url}}
-        if task_list is None:
-            # 默认值
-            task_list = []
-            defalut_type_dict = {"sale": {"verbose": False, "database_url": None}}
-            task_list.append(defalut_type_dict)
-        if if_with_schedule:
-            # 如果定时运行，默认获取当天数据
-            t = time.localtime()
-            self.set_period(time.strftime("%Y-%m-%d~%Y-%m-%d", t))
         try:
+            if not isinstance(if_with_schedule, bool):
+                raise TypeError("if_with_schedule must be bool")
+            if not isinstance(task_list, list):
+                raise TypeError("task_list must be list")
+            if if_with_schedule:
+                # 如果定时运行，默认获取当天数据
+                t = time.localtime()
+                self.set_period(time.strftime("%Y-%m-%d~%Y-%m-%d", t))
+            # task_list 中 dict 格式如下
+            # {(str)查询数据类型: {"verbose": (bool)是否verbose, "database_url": (str)数据库的url}}
+            if task_list is None:
+                # 默认值
+                task_list = []
+                defalut_type_dict = {"sale": {"verbose": False, "database_url": None}}
+                task_list.append(defalut_type_dict)
             start_time = time.time()
             start_time_str = time.strftime("%Y-%m-%d %H:%M:%S ", time.localtime())
             self._login()

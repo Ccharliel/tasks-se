@@ -41,6 +41,8 @@ class AUTOSCREENSHOT(TASK):
     # 运行自动化任务
     def run(self, if_with_schedule=False):
         try:
+            if not isinstance(if_with_schedule, bool):
+                raise TypeError("if_with_schedule must be bool")
             start_time = time.time()
             start_time_str = time.strftime("%Y-%m-%d %H:%M:%S ", time.localtime())
             self.constant_shot()

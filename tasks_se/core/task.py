@@ -228,7 +228,7 @@ class TASK(ABC):
 
     # 核心运行方法
     @abstractmethod
-    def run(self, if_with_schedule=False):
+    def run(self, if_with_schedule:bool=False):
         pass
 
     def run_with_schedule(self, point: str, date:str=None, if_block=True, add_mode=False, *args, **kwargs):
