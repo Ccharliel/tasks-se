@@ -14,7 +14,7 @@ from tasks_se.core.config import LOG_DIR
 
 
 os.makedirs(LOG_DIR, exist_ok=True)
-logger.add(f"{LOG_DIR}/driver.log",
+logger.add(os.path.join(LOG_DIR, "init", "driver.log"),
            rotation="1 MB",
            filter=lambda record: record["function"] == "chromedriver_downloading")
 logger.add(f"{LOG_DIR}/download.log",

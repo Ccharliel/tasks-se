@@ -4,6 +4,10 @@ from loguru import logger
 from tasks_se.utils.base_utils import *
 from tasks_se.core.config import LOG_DIR
 
+os.makedirs(os.path.join(LOG_DIR, "AUTOFILL"), exist_ok=True)
+logger.add(os.path.join(LOG_DIR, "AUTOFILL", "AUTOFILL_utils.log"), rotation="1 MB",
+           filter=lambda r: r["file"].name == f"{os.path.basename(__file__)}")
+
 
 # AUTOFILL 任务所需专属工具
 def _creat_info(name: str):
@@ -24,10 +28,6 @@ def _creat_info(name: str):
 
 
 def get_info(name: str):
-    os.makedirs(f"{LOG_DIR}/AUTOFILL", exist_ok=True)
-    logger.add(f"{LOG_DIR}/AUTOFILL/AUTOFILL.log", rotation="1 MB",
-               filter=lambda r: r["file"].name == f"{os.path.basename(__file__)}")
-
     path = f"info/{name}.xlsx"
     ret = _creat_info(name)
     if ret == 0:

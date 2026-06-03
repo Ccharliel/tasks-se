@@ -9,5 +9,5 @@ __all__ = [
     "AUTOFILL",
     "AUTOSCREENSHOT",
     "POSPALGETDATA",
-    "SIMULATEOP",
+    "SIMULATEOP"
 ]

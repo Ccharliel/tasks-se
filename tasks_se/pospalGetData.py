@@ -9,79 +9,56 @@ import threading
 import pandas as pd
 import numpy as np
 from loguru import logger
-from sqlalchemy import create_engine, text, String
+from sqlalchemy import create_engine, String
 
 from tasks_se.core.task import TASK
 from tasks_se.utils.base_utils import auto_del
 
 
-# POSPALGETDATA 是通过银豹系统获得某时间段每天的营业数据的任务
 class POSPALGETDATA(TASK):
-    Num = 0
-    _num_lock = threading.Lock()
+    def __init__(self, url, login_data,
+                 window=(None, None, None, None), name=None):
+        super().__init__(url, window, name, login_data)
 
-    def __init__(self, u, user_name, password, display=False, cover=None, name=None):
-        super().__init__(u, display)
-        logger.add(f"{self.log_dir}/{self.class_name}.log", rotation="1 MB",
-                   filter=lambda re: re["file"].name == f"{os.path.basename(__file__)}")
-        self.user_name = user_name
-        self.password = password
-        t = time.localtime()
+    def _init_config(self):
         self._date_tag = "date_tag"
-        self.__period = time.strftime("%Y-%m-%d~%Y-%m-%d", t)
-        self.__start_date = datetime(*t[:3])
-        self.__end_date = datetime(*t[:3])
+        t = time.localtime()
+        self._period = time.strftime("%Y-%m-%d~%Y-%m-%d", t)
+        self._start_date = datetime(*t[:3])
+        self._end_date = datetime(*t[:3])
         self.results = list()
-        self.name = f"{self.class_name}{POSPALGETDATA.Num}" if name is None else name
-        if self.display:
-            self._check_cover_valid(cover)
-            self.x_p = cover[0]
-            self.y_p = cover[1]
-            self.x_s = cover[2]
-            self.y_s = cover[3]
-        self.dr = self._init_driver()
-        with POSPALGETDATA._num_lock:
-            POSPALGETDATA.Num += 1
 
-    # 只能通过 set_period 修改 self.__period, self.__start_date, self.__end_date
-    @property
-    def period(self):
-        """获取 period (只读)"""
-        return self.__period
+    def _set_scheduler_trigger(self):
+        pass
 
-    @property
-    def start_date(self):
-        """获取 start_date (只读)"""
-        return self.__start_date
-
-    def end_date(self):
-        """获取 end_date (只读)"""
-        return self.__end_date
-
-    # 根据 user_name 和 password 登录
+    # 根据 username 和 password 登录
     def _login(self):
-        u_bt = self.dr.find_element(By.XPATH, '//*[@id="txt_userName"]')
-        p_bt = self.dr.find_element(By.XPATH, '//*[@id="txt_password"]')
-        s_bt = self.dr.find_element(By.XPATH, '//*[@id="submitLoginBtn"]')
-        self._safe_send_text(u_bt, self.user_name)
-        self._safe_send_text(p_bt, self.password)
+        username, password = super()._login()
+        u_bt = self._dr.find_element(By.XPATH, '//*[@id="txt_userName"]')
+        p_bt = self._dr.find_element(By.XPATH, '//*[@id="txt_password"]')
+        s_bt = self._dr.find_element(By.XPATH, '//*[@id="submitLoginBtn"]')
+        self._safe_send_text(u_bt, username)
+        self._safe_send_text(p_bt, password)
         self._safe_click(s_bt)
+
+    def _after_inject(self):
+        pass
 
     # 爬取银豹每天的数据
     def _get_data_daily(self, date, data_type, verbose) -> pd.DataFrame:
         df = pd.DataFrame()
         if data_type == "sale":
             if verbose:
-                download_btn = self.dr.find_element(By.XPATH, '//*[@id="btnExport"]')
-                download_path = os.path.join(self.download_dir, data_type, datetime.strftime(date, "%Y-%m-%d"))
+                download_btn = self._dr.find_element(By.XPATH, '//*[@id="btnExport"]')
+                download_path = os.path.join(self._download_dir, data_type, datetime.strftime(date, "%Y-%m-%d"))
                 self._safe_download(download_btn, download_path)
                 files = [f for f in os.listdir(download_path) if f.endswith('.xlsx')]
                 latest_file = max([os.path.join(download_path, f) for f in files], key=os.path.getctime)
                 df = pd.read_excel(latest_file, engine='calamine')
-                auto_del('d', os.path.join(self.download_dir, data_type), 366)
+                auto_del('d', os.path.join(self._download_dir, data_type), 366)
             else:
                 # 数据包括：销售额（产品 / 服务）
-                sale_info = self.dr.find_element(By.XPATH, '//*[@id="mainTable"]/tbody/tr[1]/td[2]/div')
+                sale_info = self._dr.find_element(By.XPATH, '//*[@id="mainTable"]/tbody/tr[1]/td[2]/div')
                 total_sale = sale_info.find_element(By.XPATH, './span[1]').text
                 sale_comp = sale_info.get_attribute('textContent').split(')')[0].split('(')[1].split("; ")
                 sale_prod, sale_ser = [i.split(' ')[1] for i in sale_comp]
@@ -101,36 +78,36 @@ class POSPALGETDATA(TASK):
     def _switch_page(self, data_type, verbose):
         if data_type == "sale":
             if verbose:
-                self.dr.get(f"{self.u}/Report/ProductSaleDetails")
+                self._dr.get(f"{self._url}/Report/ProductSaleDetails")
             else:
-                self.dr.get(f"{self.u}/Report/BusinessSummaryV2")
+                self._dr.get(f"{self._url}/Report/BusinessSummaryV2")
 
     def _get_data(self, data_type, verbose):
-        logger.info(f"{self.name} is getting {self.__period} {data_type} data ...")
+        self._log.info(f"{self._name} is getting {self._period} {data_type} data ...")
         ## 查询操作
         # 按照查询数据种类切换页面
         self._switch_page(data_type, verbose)
         # 获取选择时间的按钮
-        WebDriverWait(self.dr, 10).until(
+        WebDriverWait(self._dr, 10).until(
             EC.invisibility_of_element_located((By.CLASS_NAME, "loadingBg"))
         )
         try:
-            start_bt = WebDriverWait(self.dr, 15).until(
+            start_bt = WebDriverWait(self._dr, 15).until(
                 EC.element_to_be_clickable((By.XPATH, '//*[@id="dateTimeRangeBox"]/input[1]'))
             )
-            end_bt = WebDriverWait(self.dr, 15).until(
+            end_bt = WebDriverWait(self._dr, 15).until(
                 EC.element_to_be_clickable((By.XPATH, '//*[@id="dateTimeRangeBox"]/input[2]'))
             )
-            searching_bt = WebDriverWait(self.dr, 15).until(
+            searching_bt = WebDriverWait(self._dr, 15).until(
                 EC.element_to_be_clickable(
                     (By.XPATH, '//*[@id="dateTimeRangeBox"]/following-sibling::div[@class="submitBtn"][1]'))
             )
         except (NoSuchElementException, ElementNotInteractableException):
             raise RuntimeError("Fatal Error: Can't find date selecting buttons!!!")
         data_list = []
-        current_date = self.__start_date
+        current_date = self._start_date
         year_lag, month_lag, day_lag = None, None, None
-        while current_date <= self.__end_date:
+        while current_date <= self._end_date:
             current_str = current_date.strftime("%Y-%m-%d")
             year, month, day = current_str.split('-')
             # 模拟点击来选择时间段中的每一天
@@ -143,25 +120,26 @@ class POSPALGETDATA(TASK):
                 # 点击改年份
                 if year != year_lag:
                     try:
-                        year_sel = self.dr.find_element(By.XPATH,  '//*[@id="ui-datepicker-div"]/div[1]/div/select[1]')
+                        year_sel = self._dr.find_element(By.XPATH, '//*[@id="ui-datepicker-div"]/div[1]/div/select[1]')
                     except (NoSuchElementException, ElementNotInteractableException) as e:
                         raise RuntimeError(f"Fatal Error: Can't find year selector!!! {e}")
                     self._safe_select(year_sel, "text", f"{year}")
                 # 点击改月份
                 if month != month_lag:
                     try:
-                        mon_sel = self.dr.find_element(By.XPATH, '//*[@id="ui-datepicker-div"]/div[1]/div/select[2]')
+                        mon_sel = self._dr.find_element(By.XPATH, '//*[@id="ui-datepicker-div"]/div[1]/div/select[2]')
                     except (NoSuchElementException, ElementNotInteractableException):
                         raise RuntimeError("Fatal Error: Can't find month selector!!!")
                     self._safe_select(mon_sel, "text", f"{month}")
                 # 点击改日期
                 try:
-                    day_op = self.dr.find_element(By.XPATH, f'//*[@id="ui-datepicker-div"]/table/tbody/tr/td/a[text()="{int(day)}"]')
+                    day_op = self._dr.find_element(By.XPATH,
+                                                   f'//*[@id="ui-datepicker-div"]/table/tbody/tr/td/a[text()="{int(day)}"]')
                 except (NoSuchElementException, ElementNotInteractableException):
                     raise RuntimeError("Fatal Error: Can't find day operator!!!")
                 self._safe_click(day_op)
             self._safe_click(searching_bt)
-            WebDriverWait(self.dr, 10).until(
+            WebDriverWait(self._dr, 10).until(
                 EC.invisibility_of_element_located((By.CLASS_NAME, "loadingBg"))
             )
             df_daily = self._get_data_daily(current_date, data_type, verbose)
@@ -173,14 +151,16 @@ class POSPALGETDATA(TASK):
 
     def _save_to_database(self, df, database_url, table_name):
         try:
-            logger.info(f"{self.name} is saving data to database: {database_url}")
+            self._log.info(f"{self._name} is saving data to database: {database_url}")
             if df.empty:
-                logger.warning(f"No data to save to database !!!")
+                self._log.warning(f"No data to save to database !!!")
                 return
             engine = create_engine(database_url)
-            df = df.replace([np.nan, np.inf, -np.inf], None)
+            dtype_mapping: dict = {col: String(255) for col in df.columns}
+            dtype_mapping[self._date_tag] = String(20)  # 单独控制日期字段
+            df = df.replace([float('nan'), float('inf'), float('-inf')], None)
             # 写入空表，如果表不存在就创建
-            df.iloc[:0].to_sql(table_name, engine, if_exists='append', index=True, dtype={self._date_tag: String(20)})
+            df.iloc[:0].to_sql(table_name, engine, if_exists='append', index=True, dtype=dtype_mapping)
             current_dates = set(df.index.unique())
             df_new = pd.DataFrame()
             if current_dates:
@@ -194,16 +174,14 @@ class POSPALGETDATA(TASK):
                 df_new = df.loc[~df.index.isin(existing_dates)].copy(deep=True)
             # 插入新数据
             if not df_new.empty:
-                dtype_mapping = {col: String(255) for col in df.columns}
-                dtype_mapping[self._date_tag] = String(20)  # 单独控制日期字段
                 df_new.to_sql(table_name, engine, if_exists='append', index=True, dtype=dtype_mapping)
-                logger.success(
-                    f"{self.name} successfully save {len(df_new)} records "
-                    f"for {len(df_new.index.unique())} new dates to database: {database_url} ")
+                self._log.success(
+                    f"{self._name} successfully save {len(df_new)} records "
+                    f"for {len(df_new.index.unique())} new dates to database: {database_url} !!!")
             else:
-                logger.info(f"{self.name} all dates already exist in database, no data to save")
+                self._log.info(f"{self._name} all dates already exist in database, no data to save")
         except Exception as e:
-            logger.warning(f"{self.name} failed to save data to database: {database_url} !!!\n[{e}]")
+            self._log.warning(f"{self._name} failed to save data to database: {database_url} \n[{e}]")
 
     # 手动设置想获取数据的时间段
     def set_period(self, period: str = ''):
@@ -212,93 +190,70 @@ class POSPALGETDATA(TASK):
             datetime.strptime(start_str, "%Y-%m-%d")
             datetime.strptime(end_str, "%Y-%m-%d")
         except ValueError:
-            logger.warning(f"{self.name} set period failed !!! [Wrong Format: {period}]")
+            self._log.warning(f"{self._name} set period failed !!! [Wrong Format: {period}]")
             return
-        self.__period = period
-        self.__start_date = datetime.strptime(start_str, "%Y-%m-%d")
-        self.__end_date = datetime.strptime(end_str, "%Y-%m-%d")
-        logger.success(f"{self.name} successfully set period to {self.__period} !!!")
+        self._period = period
+        self._start_date = datetime.strptime(start_str, "%Y-%m-%d")
+        self._end_date = datetime.strptime(end_str, "%Y-%m-%d")
+        self._log.success(f"{self._name} successfully set period to {self._period} !!!")
 
     # 运行自动化任务
-    def run(self, if_with_schedule=False, task_list: list[dict] = None):
+    def _execute(self, task_list: list[dict] = None):
         """
         task_list example: [{str(type): {"verbose": bool, "database_url": str/None}}, ...]
         """
-        try:
-            self.results = []
-            if task_list is None:
-                # 默认值
-                task_list = []
-                defalut_type_dict = {"sale": {"verbose": False, "database_url": None}}
-                task_list.append(defalut_type_dict)
-            if not isinstance(if_with_schedule, bool):
-                raise TypeError("if_with_schedule must be bool")
-            if not isinstance(task_list, list):
-                raise TypeError("task_list must be list")
-            if if_with_schedule:
-                # 如果定时运行，默认获取当天数据
-                t = time.localtime()
-                self.set_period(time.strftime("%Y-%m-%d~%Y-%m-%d", t))
-            start_time = time.time()
-            start_time_str = time.strftime("%Y-%m-%d %H:%M:%S ", time.localtime())
-            try:
-                self._login()
-            except NoSuchElementException:
-                pass
-            time.sleep(1)
-            for type_dict in task_list:
-                for ty, ty_details in type_dict.items():
-                    df = self._get_data(ty, ty_details["verbose"])
-                    if ty_details["database_url"] is not None:
-                        table_name = ty + "_data"
-                        self._save_to_database(df, ty_details["database_url"], table_name)
-                    self.results.append(df)
-            end_time = time.time()
-            time_cost = end_time - start_time
-            logger.success(f'{self.name} successfully run !!! [start:{start_time_str} | cost:{time_cost}s]')
-        except Exception as e:
-            logger.critical(f'{self.name} failed to run !!!\n[{e}]')
-
-    def __del__(self):
-        super().__del__()
+        self.results = []
+        if task_list is None:
+            # 默认值
+            task_list = []
+            defalut_type_dict = {"sale": {"verbose": False, "database_url": None}}
+            task_list.append(defalut_type_dict)
+        if not isinstance(task_list, list):
+            raise TypeError("task_list must be list")
+        if self._scheduler is not None:
+            # 如果定时运行，默认获取当天数据
+            t = time.localtime()
+            self.set_period(time.strftime("%Y-%m-%d~%Y-%m-%d", t))
+        for type_dict in task_list:
+            for ty, ty_details in type_dict.items():
+                df = self._get_data(ty, ty_details["verbose"])
+                if ty_details["database_url"] is not None:
+                    table_name = ty + "_data"
+                    self._save_to_database(df, ty_details["database_url"], table_name)
+                self.results.append(df)
 
 
 ## AUTOGETSALE测试
 if __name__ == '__main__':
     from dotenv import load_dotenv
-    import atexit
-    import signal
-    import sys
-    url = "https://beta33.pospal.cn"
+
+    u = "https://beta33.pospal.cn"
     load_dotenv()
     un = os.getenv("POSPAL_USERNAME")
     p = os.getenv("POSPAL_PASSWORD")
-    s = POSPALGETDATA(url, un, p, display=True, cover=(0, 0, 1440, 900))
-    # s = POSPALGETDATA(url, un, p, display=True, cover=(400, 0, 400, 800))
-    # s = POSPALGETDATA(url, un, p)
-    s.set_period("2025-6-1~2025-6-3")
+    u_d = {"username": un, "password": p}
+    s = POSPALGETDATA(u, u_d, window=(0, 0, 1440, 900))
+    # s = POSPALGETDATA(u, u_d, window=(400, 0, 400, 800))
+    # s = POSPALGETDATA(u, u_d)
+    # s.set_period("2025-6-1~2025-6-3")
     # s.set_period("2026-04-29~2026-04-29")
 
-    # # 测试运行
+    # 测试运行
     # s.run()
     # s.run(task_list=[{"sale": {"verbose": True, "database_url": None}}])
     # s.run(task_list=[{"sale": {"verbose": True,
     #                            "database_url": "mysql+pymysql://root:123456@localhost:3306/pospal"}}])
 
     # 测试运行定时任务
-    ex_time_0 = datetime.now() + timedelta(seconds=1)
-    ex_time = datetime.now() + timedelta(seconds=15)
-    date = ex_time.strftime("%Y-%m-%d")
-    point_0 = ex_time_0.strftime("%H:%M:%S")
-    point = ex_time.strftime("%H:%M:%S")
-    s.run_with_schedule(point=point_0, date=date, if_block=False,
-                        task_list=[{"sale": {"verbose": True,
-                                             "database_url": None}}])
-    time.sleep(10)
-    s.run_with_schedule(point=point, date=date, if_block=False, add_mode=False,
-                        task_list=[{"sale": {"verbose": True,
-                                             "database_url": "mysql+pymysql://root:123456@localhost:3306/pospal"}}])
-    time.sleep(20)
-    for idx, r in enumerate(s.results):
-        print(f"result{idx}: \n{r}")
 
+    # for idx, r in enumerate(s.results):
+    #     print(f"result{idx}: \n{r}")
+    s.close()
+
+    # 测试 session_data
+    ss = POSPALGETDATA(u, s.session_data, window=(0, 0, 1440, 900))
+    # ss = POSPALGETDATA(u, s.session_data, window=(0, 0, 400, 800))
+    ss.run()
+    for idx, r in enumerate(ss.results):
+        print(f"result{idx}: \n{r}")
+    ss.close()
