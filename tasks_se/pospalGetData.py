@@ -163,7 +163,6 @@ class POSPALGETDATA(TASK):
             engine = create_engine(database_url)
             dtype_mapping: dict = {col: String(255) for col in df.columns}
             dtype_mapping[self._date_tag] = String(20)  # 单独控制日期字段
-            df = df.replace([float('nan'), float('inf'), float('-inf')], None)
             # 写入空表，如果表不存在就创建
             df.iloc[:0].to_sql(table_name, engine, if_exists='append', index=True, dtype=dtype_mapping)
             current_dates = set(df.index.unique())
@@ -208,6 +207,7 @@ class POSPALGETDATA(TASK):
         for type_dict in task_list:
             for ty, ty_details in type_dict.items():
                 df = self._get_data(ty, ty_details["verbose"])
+                df = df.replace([float('nan'), float('inf'), float('-inf')], None)
                 if ty_details["database_url"] is not None:
                     table_name = ty + "_data"
                     self._save_to_database(df, ty_details["database_url"], table_name)
