@@ -1,14 +1,12 @@
 import os
 import time
 from datetime import datetime, timedelta
+from apscheduler.triggers.cron import CronTrigger
 from selenium.common import ElementNotInteractableException, NoSuchElementException
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
-import threading
 import pandas as pd
-import numpy as np
-from loguru import logger
 from sqlalchemy import create_engine, String
 
 from tasks_se.core.task import TASK
@@ -28,8 +26,15 @@ class POSPALGETDATA(TASK):
         self._end_date = datetime(*t[:3])
         self.results = list()
 
-    def _set_scheduler_trigger(self):
-        pass
+    def _set_scheduler_trigger(self, hour=None, minute=None):
+        if hour is None and minute is None:
+            return
+        else:
+            if hour is None:
+                hour = 20
+            elif minute is None:
+                minute = 0
+        self._scheduler_trigger = CronTrigger(hour=hour, minute=minute)
 
     # 根据 username 和 password 登录
     def _login(self):
@@ -183,20 +188,6 @@ class POSPALGETDATA(TASK):
         except Exception as e:
             self._log.warning(f"{self._name} failed to save data to database: {database_url} \n[{e}]")
 
-    # 手动设置想获取数据的时间段
-    def set_period(self, period: str = ''):
-        try:
-            start_str, end_str = period.split('~')
-            datetime.strptime(start_str, "%Y-%m-%d")
-            datetime.strptime(end_str, "%Y-%m-%d")
-        except ValueError:
-            self._log.warning(f"{self._name} set period failed !!! [Wrong Format: {period}]")
-            return
-        self._period = period
-        self._start_date = datetime.strptime(start_str, "%Y-%m-%d")
-        self._end_date = datetime.strptime(end_str, "%Y-%m-%d")
-        self._log.success(f"{self._name} successfully set period to {self._period} !!!")
-
     # 运行自动化任务
     def _execute(self, task_list: list[dict] = None):
         """
@@ -211,7 +202,7 @@ class POSPALGETDATA(TASK):
         if not isinstance(task_list, list):
             raise TypeError("task_list must be list")
         if self._scheduler is not None:
-            # 如果定时运行，默认获取当天数据
+            # 如果定时运行，获取当天数据
             t = time.localtime()
             self.set_period(time.strftime("%Y-%m-%d~%Y-%m-%d", t))
         for type_dict in task_list:
@@ -221,6 +212,25 @@ class POSPALGETDATA(TASK):
                     table_name = ty + "_data"
                     self._save_to_database(df, ty_details["database_url"], table_name)
                 self.results.append(df)
+
+    # 手动设置想获取数据的时间段
+    def set_period(self, period: str = ''):
+        with self._lock:
+            try:
+                start_str, end_str = period.split('~')
+                start_date = datetime.strptime(start_str, "%Y-%m-%d")
+                end_date = datetime.strptime(end_str, "%Y-%m-%d")
+            except ValueError:
+                self._log.warning(f"{self._name} set period failed !!! [Wrong Format: {period}]")
+                return
+            if start_date > end_date:
+                self._log.warning(
+                    f"{self._name} set period failed !!! [Start date {start_str} is later than End date {end_str}]")
+                return
+            self._period = period
+            self._start_date = datetime.strptime(start_str, "%Y-%m-%d")
+            self._end_date = datetime.strptime(end_str, "%Y-%m-%d")
+            self._log.success(f"{self._name} successfully set period to {self._period} !!!")
 
 
 ## AUTOGETSALE测试
@@ -238,22 +248,39 @@ if __name__ == '__main__':
     # s.set_period("2025-6-1~2025-6-3")
     # s.set_period("2026-04-29~2026-04-29")
 
+    # 测试运行定时任务
+    next_second = (datetime.now() + timedelta(minutes=1)).strftime("%H:%M:%S")
+    time_parts = next_second.split(':')
+    h, m, _ = map(int, time_parts)
+    s.set_scheduler("background", hour=h, minute=m)
+    s.run(task_list=[{"sale": {"verbose": True,
+                               "database_url": "mysql+pymysql://root:123456@localhost:3306/pospal"}}])
+    time.sleep(60.1)  # 确保定时任务触发
+
+    # s.set_scheduler("background")
+    # s.run(task_list=[{"sale": {"verbose": True,
+    #                            "database_url": "mysql+pymysql://root:123456@localhost:3306/pospal"}}])
+    # time.sleep(1.1)  # 确保定时任务触发
+    # print(f"results: {s.results}")
+
     # 测试运行
-    # s.run()
+    s.set_scheduler()
+    print(f"results: {s.results}")  # 说明 set_scheduler 的确会等待正在运行的job完成
+    s.set_period("2026-03-29~2026-03-29")
+    s.run()
     # s.run(task_list=[{"sale": {"verbose": True, "database_url": None}}])
     # s.run(task_list=[{"sale": {"verbose": True,
     #                            "database_url": "mysql+pymysql://root:123456@localhost:3306/pospal"}}])
+    for idx, r in enumerate(s.results):
+        print(f"result{idx}: \n{r}")
 
-    # 测试运行定时任务
-
-    # for idx, r in enumerate(s.results):
-    #     print(f"result{idx}: \n{r}")
+    time.sleep(5)
     s.close()
 
-    # 测试 session_data
-    ss = POSPALGETDATA(u, s.session_data, window=(0, 0, 1440, 900))
-    # ss = POSPALGETDATA(u, s.session_data, window=(0, 0, 400, 800))
-    ss.run()
-    for idx, r in enumerate(ss.results):
-        print(f"result{idx}: \n{r}")
-    ss.close()
+    # # 测试 session_data
+    # ss = POSPALGETDATA(u, s.session_data, window=(0, 0, 1440, 900))
+    # # ss = POSPALGETDATA(u, s.session_data, window=(0, 0, 400, 800))
+    # ss.run()
+    # for idx, r in enumerate(ss.results):
+    #     print(f"result{idx}: \n{r}")
+    # ss.close()

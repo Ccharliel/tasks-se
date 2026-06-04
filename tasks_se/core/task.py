@@ -38,7 +38,8 @@ class TASK(ABC):
     """
     TASK 是进行selenium进行自动化操作的任务
 
-    类变量操作要加线程锁，确保多线程同时创建实例时，类变量操作不会竞争
+    类变量操作要加类级别线程锁，确保多线程同时创建实例时，类变量不会出现竞态
+    实例的外部操作要加 self._lock，确保多线程同时操作实例时，实例属性不会出现竞态
     """
     _num: int
     _num_lock: threading.Lock
@@ -56,6 +57,10 @@ class TASK(ABC):
     @property
     def _dr(self):
         return self.__dr
+
+    @property
+    def _lock(self):
+        return self.__lock
 
     # 显示
     @property
@@ -392,7 +397,7 @@ class TASK(ABC):
     @abstractmethod
     def _login(self):
         """
-        子类实现 login 逻辑，根据字典 self.__user_data 中 {'username', 'password'} 这两个字段值
+        子类需要根据字典 self.__user_data 中 {'username', 'password'} 这两个字段值，实现 login 逻辑
         """
         return self.__user_data["username"], self.__user_data["password"]
 
@@ -496,19 +501,21 @@ class TASK(ABC):
     # 设置定时方法
     def set_scheduler(self, type: str = None, *args, **kwargs):
         """
-        设置 apscheduler
+        设置 apscheduler，默认 trigger 为 每天的 设置时刻延迟1s后的时刻
         """
         with self.__lock:
             if isinstance(self.__scheduler, BaseScheduler):
                 # 清除之前设置的 scheduler
                 self.__log.info(f"{self.__name} is clearing setted scheduler ...")
-                self.__scheduler.shutdown(wait=True)
+                if self.__scheduler.running:
+                    self.__scheduler.shutdown(wait=True)
                 self.__scheduler = None
                 self._scheduler_trigger = None
                 self.__log.success(f"{self.__name} successfully clear setted scheduler !!!")
             if type is None:
                 return
 
+            self._log.info(f"{self.__name} is setting scheduler ...")
             type_list = ["blocking", "background"]
             if not isinstance(type, str) or type not in type_list:
                 self.__log.error(f"{self.__name} failed set scheduler: type must be one of {type_list} !!!")
@@ -518,6 +525,7 @@ class TASK(ABC):
             if type == "background":
                 self.__scheduler = BackgroundScheduler()
 
+            self._log.info(f"{self.__name} is setting scheduler trigger ...")
             self._set_scheduler_trigger(*args, **kwargs)
             if not isinstance(self._scheduler_trigger, BaseTrigger):
                 next_second = (datetime.now() + timedelta(seconds=1)).strftime("%H:%M:%S")
@@ -543,7 +551,8 @@ class TASK(ABC):
         with self.__lock:
             self.__log.info(f"{self.__name} is closing ...")
             if self.__scheduler is not None:
-                self.__scheduler.shutdown(wait=True)
+                if self.__scheduler.running:
+                    self.__scheduler.shutdown(wait=True)
                 self.__scheduler = None
             if self.__display and self.__window in TASK.__windows:
                 with TASK.__windows_lock:

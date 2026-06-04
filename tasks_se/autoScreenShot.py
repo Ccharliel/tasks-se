@@ -1,8 +1,6 @@
 import os
-import time
 from selenium.webdriver.common.by import By
 from selenium.webdriver.common.keys import Keys
-import threading
 
 from tasks_se.core.task import TASK
 from tasks_se.utils.threading_utils import threading_running

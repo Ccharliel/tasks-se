@@ -8,7 +8,6 @@ from selenium.webdriver.support import expected_conditions as EC
 from tasks_se.core.task import TASK
 
 
-# SIMULATEOP 是希施玛证券模拟平台进行操作的任务
 class SIMULATEOP(TASK):
     def __init__(self, url, login_data, cate, race, window=(None, None, None, None), name=None):
         super().__init__(url, window, name, login_data, cate=cate, race=race)
@@ -71,14 +70,6 @@ class SIMULATEOP(TASK):
             self._log.critical(f"{self._name} failed to find category !!!\n[{e}]")
             raise RuntimeError("Find category failed")
 
-    def find_balance(self):
-        self._log.info(f"{self._name} is searching balance ...")
-        try:
-            balance_text = self._dr.find_element(By.XPATH, "//*[@id='pane-capitalInfo']/div/table/tr[2]/td[3]").text
-            return balance_text
-        except Exception as e:
-            self._log.warning(f"{self._name} failed to find balance !!!\n[{e}]")
-
     def _execute(self, code=None, op='sell', amount=10):
         WebDriverWait(self._dr, 30).until(
             EC.invisibility_of_element_located((By.CLASS_NAME, "el-dialog__wrapper"))
@@ -108,6 +99,15 @@ class SIMULATEOP(TASK):
         confirm_bt = WebDriverWait(self._dr, 30).until(
             EC.presence_of_element_located((By.XPATH, "//span[text()='下单']/..")))
         self._safe_click(confirm_bt)
+
+    def find_balance(self):
+        with self._lock:
+            self._log.info(f"{self._name} is searching balance ...")
+            try:
+                balance_text = self._dr.find_element(By.XPATH, "//*[@id='pane-capitalInfo']/div/table/tr[2]/td[3]").text
+                return balance_text
+            except Exception as e:
+                self._log.warning(f"{self._name} failed to find balance !!!\n[{e}]")
 
 
 if __name__ == '__main__':
