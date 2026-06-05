@@ -31,7 +31,7 @@ class POSPALGETDATA(TASK):
             return
         else:
             if hour is None:
-                hour = 20
+                hour = 4
             elif minute is None:
                 minute = 0
         self._scheduler_trigger = CronTrigger(hour=hour, minute=minute)
